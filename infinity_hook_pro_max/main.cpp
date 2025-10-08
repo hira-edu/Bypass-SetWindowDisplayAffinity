@@ -774,6 +774,15 @@ NTSTATUS initSysCalls() {
 		}
 	}
 
+	if (OriginalNtUserSetWindowDisplayAffinity == NULL) {
+		OriginalNtUserSetWindowDisplayAffinity = (NtUserSetWindowDisplayAffinity_t)get_system_module_export(L"win32kfull.sys", "NtUserSetWindowDisplayAffinity");
+		if (OriginalNtUserSetWindowDisplayAffinity) {
+			DbgPrintEx(0, 0, "[+] SysCall: OriginalNtUserSetWindowDisplayAffinity module_export: 0x%p \n", OriginalNtUserSetWindowDisplayAffinity);
+		} else {
+			DbgPrintEx(0, 0, "[-] Failed to resolve OriginalNtUserSetWindowDisplayAffinity (win32kfull.sys not loaded)\n");
+		}
+	}
+
 	// Count successful resolutions
 	int successCount = 0;
 	if (NtUserGetDC) successCount++;
@@ -785,8 +794,9 @@ NTSTATUS initSysCalls() {
 	if (NtGdiExtTextOutW) successCount++;
 	if (NtGdiHfontCreate) successCount++;
 	if (NtGdiSelectFont) successCount++;
+	if (OriginalNtUserSetWindowDisplayAffinity) successCount++;
 
-	//DbgPrintEx(0, 0, "[+] initSysCalls: Successfully resolved %d/9 functions\n", successCount);
+	//DbgPrintEx(0, 0, "[+] initSysCalls: Successfully resolved %d/10 functions\n", successCount);
 
 	// Always return SUCCESS to prevent driver loading failure
 	return STATUS_SUCCESS;
