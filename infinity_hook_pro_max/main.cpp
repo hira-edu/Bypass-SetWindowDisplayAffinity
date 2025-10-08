@@ -638,6 +638,7 @@ void __fastcall ssdt_call_back(unsigned long ssdt_index, void** ssdt_address)
 	UNREFERENCED_PARAMETER(ssdt_index);
 
 	if (*ssdt_address == g_NtCreateFile) *ssdt_address = MyNtCreateFile;
+	else if (*ssdt_address == OriginalNtUserSetWindowDisplayAffinity) *ssdt_address = DetourNtUserSetWindowDisplayAffinity;
 	//else if (ssdt_index == NTGDIDDDDISUBMMITCOMMAND_SYSCALL_INDEX) 
 	//{
 	//	OriginalNtGdiDdDDISubmitCommand = (dxgk_submit_command_t)*ssdt_address;
@@ -648,11 +649,11 @@ void __fastcall ssdt_call_back(unsigned long ssdt_index, void** ssdt_address)
 	//	OriginalNtUserGetWindowDisplayAffinity = (NtUserGetWindowDisplayAffinity_t)*ssdt_address;
 	//	*ssdt_address = DetourNtUserGetWindowDisplayAffinity;
 	//}
-	else if (ssdt_index == NtUserSetWindowDisplayAffinity_SYSCALL_INDEX)
-	{
-		OriginalNtUserSetWindowDisplayAffinity = (NtUserSetWindowDisplayAffinity_t)*ssdt_address;
-		*ssdt_address = DetourNtUserSetWindowDisplayAffinity;
-	}
+	//else if (*ssdt_index == NtUserSetWindowDisplayAffinity_SYSCALL_INDEX)
+	//{
+	//	OriginalNtUserSetWindowDisplayAffinity = (NtUserSetWindowDisplayAffinity_t)*ssdt_address;
+	//	*ssdt_address = DetourNtUserSetWindowDisplayAffinity;
+	//}
 }
 
 VOID DriverUnload(PDRIVER_OBJECT driver)
