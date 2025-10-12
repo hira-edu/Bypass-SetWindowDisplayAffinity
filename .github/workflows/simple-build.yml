@@ -61,7 +61,7 @@ jobs:
         Get-ChildItem -Path driver_artifacts -Recurse | Select-Object FullName, Length
 
     - name: Upload Driver Files
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: driver-build-${{ github.run_number }}
         path: driver_artifacts/
