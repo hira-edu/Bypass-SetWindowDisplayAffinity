@@ -1,0 +1,136 @@
+name: Build Windows Driver
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v2
+      with:
+        msbuild-architecture: x64
+
+    - name: Setup Windows Driver Kit
+      run: |
+        # Download and install WDK
+        $wdkUrl = "https://go.microsoft.com/fwlink/?linkid=2166289"
+        $wdkInstaller = "$env:TEMP\wdksetup.exe"
+        Write-Host "Downloading Windows Driver Kit..."
+        Invoke-WebRequest -Uri $wdkUrl -OutFile $wdkInstaller
+        Write-Host "Installing Windows Driver Kit..."
+        Start-Process -FilePath $wdkInstaller -ArgumentList "/quiet", "/installpath", "C:\WDK" -Wait
+
+        # Add WDK to environment
+        $env:WDKContentRoot = "C:\WDK"
+        [System.Environment]::SetEnvironmentVariable("WDKContentRoot", "C:\WDK", "Process")
+
+    - name: Setup Visual Studio Build Tools
+      run: |
+        # Install required Visual Studio components
+        $vsUrl = "https://aka.ms/vs/17/release/vs_buildtools.exe"
+        $vsInstaller = "$env:TEMP\vs_buildtools.exe"
+        Write-Host "Downloading Visual Studio Build Tools..."
+        Invoke-WebRequest -Uri $vsUrl -OutFile $vsInstaller
+        Write-Host "Installing Visual Studio Build Tools..."
+        Start-Process -FilePath $vsInstaller -ArgumentList `
+          "--quiet", "--wait", "--norestart", "--nocache", `
+          "--add", "Microsoft.VisualStudio.Component.Windows10SDK.22621", `
+          "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", `
+          "--add", "Microsoft.VisualStudio.Component.VC.CoreBuildTools", `
+          "--add", "Microsoft.VisualStudio.Component.Windows11SDK.22000" -Wait
+
+    - name: Build Driver
+      run: |
+        # Build the driver using MSBuild
+        Write-Host "Building infinity_hook_pro_max driver..."
+        msbuild infinity_hook_pro_max.sln /t:Build /p:Configuration=Release /p:Platform=x64 /p:SignMode=off
+
+    - name: List build outputs
+      run: |
+        Write-Host "Searching for build artifacts..."
+        Get-ChildItem -Path . -Recurse -Include *.sys,*.inf,*.cat,*.pdb | ForEach-Object {
+          Write-Host "Found: $($_.FullName)"
+        }
+
+    - name: Create artifact package
+      run: |
+        # Create artifacts directory
+        New-Item -ItemType Directory -Force -Path artifacts
+
+        # Copy driver files
+        Copy-Item -Path "infinity_hook_pro_max.sys" -Destination "artifacts\" -ErrorAction SilentlyContinue
+        Copy-Item -Path "infinity_hook_pro_max.inf" -Destination "artifacts\" -ErrorAction SilentlyContinue
+        Copy-Item -Path "infinity_hook_pro_max.cat" -Destination "artifacts\" -ErrorAction SilentlyContinue
+
+        # Search for built driver in x64 directories
+        $x64Dirs = Get-ChildItem -Path . -Recurse -Directory -Filter "x64" -ErrorAction SilentlyContinue
+        foreach ($dir in $x64Dirs) {
+          $sysFiles = Get-ChildItem -Path $dir.FullName -Recurse -Filter "*.sys" -ErrorAction SilentlyContinue
+          foreach ($file in $sysFiles) {
+            Write-Host "Copying $($file.FullName) to artifacts"
+            Copy-Item -Path $file.FullName -Destination "artifacts\$($file.Name)" -Force
+          }
+
+          $pdbFiles = Get-ChildItem -Path $dir.FullName -Recurse -Filter "*.pdb" -ErrorAction SilentlyContinue
+          foreach ($file in $pdbFiles) {
+            Write-Host "Copying $($file.FullName) to artifacts"
+            Copy-Item -Path $file.FullName -Destination "artifacts\$($file.Name)" -Force
+          }
+        }
+
+        # Create build info
+        $buildInfo = @{
+          BuildDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+          BuildNumber = $env:GITHUB_RUN_NUMBER
+          CommitSHA = $env:GITHUB_SHA
+          Repository = $env:GITHUB_REPOSITORY
+        }
+        $buildInfo | ConvertTo-Json | Out-File -FilePath "artifacts\build_info.json"
+
+        Write-Host "Artifact contents:"
+        Get-ChildItem -Path artifacts
+
+    - name: Upload Driver Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: infinity-hook-driver-${{ github.sha }}
+        path: artifacts/
+        retention-days: 30
+
+    - name: Upload Build Logs
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-logs
+        path: |
+          *.log
+          *.txt
+        retention-days: 7
+
+    - name: Create Release Package
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        # Compress artifacts for release
+        Compress-Archive -Path artifacts\* -DestinationPath infinity_hook_pro_max.zip -Force
+
+        # Display package info
+        $zipInfo = Get-Item infinity_hook_pro_max.zip
+        Write-Host "Created release package: $($zipInfo.Name) ($($zipInfo.Length) bytes)"
+
+    - name: Upload Release Package
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: actions/upload-artifact@v3
+      with:
+        name: release-package
+        path: infinity_hook_pro_max.zip
+        retention-days: 90

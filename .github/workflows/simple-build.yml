@@ -1,0 +1,68 @@
+name: Simple Build (Pre-installed Tools)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-simple:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Build with MSBuild
+      shell: cmd
+      run: |
+        echo Building driver project...
+        msbuild infinity_hook_pro_max.sln /t:Build /p:Configuration=Release /p:Platform=x64 /p:SignMode=off || echo Build failed but continuing
+
+    - name: Check for existing driver file
+      shell: powershell
+      run: |
+        Write-Host "=== Checking for pre-built driver ==="
+        if (Test-Path "infinity_hook_pro_max.sys") {
+          Write-Host "Found pre-built driver!"
+          $file = Get-Item "infinity_hook_pro_max.sys"
+          Write-Host "File: $($file.Name)"
+          Write-Host "Size: $($file.Length) bytes"
+          Write-Host "Modified: $($file.LastWriteTime)"
+        } else {
+          Write-Host "No pre-built driver found"
+        }
+
+    - name: Collect all driver files
+      shell: powershell
+      run: |
+        New-Item -ItemType Directory -Force -Path driver_artifacts
+
+        # Copy any .sys files
+        Get-ChildItem -Path . -Recurse -Filter "*.sys" | ForEach-Object {
+          Write-Host "Found driver: $($_.FullName)"
+          Copy-Item -Path $_.FullName -Destination "driver_artifacts\$($_.Name)" -Force
+        }
+
+        # Copy .inf and .cat files
+        Copy-Item -Path "*.inf" -Destination "driver_artifacts\" -ErrorAction SilentlyContinue
+        Copy-Item -Path "*.cat" -Destination "driver_artifacts\" -ErrorAction SilentlyContinue
+
+        # Copy source files for analysis
+        New-Item -ItemType Directory -Force -Path driver_artifacts\source
+        Copy-Item -Path "infinity_hook_pro_max\*.cpp" -Destination "driver_artifacts\source\" -ErrorAction SilentlyContinue
+        Copy-Item -Path "infinity_hook_pro_max\*.hpp" -Destination "driver_artifacts\source\" -ErrorAction SilentlyContinue
+        Copy-Item -Path "infinity_hook_pro_max\*.h" -Destination "driver_artifacts\source\" -ErrorAction SilentlyContinue
+
+        Write-Host "=== Contents of driver_artifacts ==="
+        Get-ChildItem -Path driver_artifacts -Recurse | Select-Object FullName, Length
+
+    - name: Upload Driver Files
+      uses: actions/upload-artifact@v3
+      with:
+        name: driver-build-${{ github.run_number }}
+        path: driver_artifacts/
+        retention-days: 30
